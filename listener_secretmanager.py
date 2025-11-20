@@ -10,21 +10,36 @@ import os
 
 load_dotenv()
 
-# AWS Kinesis client
-kinesis_client = boto3.client(
-    'kinesis',
-    region_name=os.getenv("AWS_DEFAULT_REGION")
-)
+# AWS clients
+aws_region = os.getenv("AWS_DEFAULT_REGION")
+kinesis_client = boto3.client("kinesis", region_name=aws_region)
+secrets_client = boto3.client("secretsmanager", region_name=aws_region)
 
 KINESIS_STREAM = os.getenv("KINESIS_STREAM")
-# Initialize Firestore Admin
-service_account_file = os.getenv("SERVICE_ACCOUNT_FILE", "serviceAccount.json")
-cred = credentials.Certificate(service_account_file)
+FIREBASE_SECRET_ID = os.getenv("FIREBASE_SECRET_ID", "firebase-service-account")
+
+
+def load_service_account():
+    """
+    Fetch service account JSON from AWS Secrets Manager.
+    """
+    resp = secrets_client.get_secret_value(SecretId=FIREBASE_SECRET_ID)
+    secret_str = resp.get("SecretString")
+    if not secret_str:
+        secret_str = resp["SecretBinary"]
+        if isinstance(secret_str, (bytes, bytearray)):
+            secret_str = secret_str.decode("utf-8")
+    return json.loads(secret_str)
+
+
+# Initialize Firestore Admin using secret-managed credentials
+service_account_info = load_service_account()
+cred = credentials.Certificate(service_account_info)
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
-print("🔥 Real-time Firestore → AWS Kinesis bridge started...")
+print("🔥 Real-time Firestore → AWS Kinesis bridge started (Secrets Manager creds)...")
 
 
 def get_collection_state():
@@ -59,7 +74,7 @@ def send_to_kinesis(document_id, change_type, data):
 
 def on_snapshot(col_snapshot, changes, read_time):
     """
-    Callback function for Firestore real-time updates.
+    Callback function for Firestore real-time updates. Enqueues work off-thread.
     """
     for change in changes:
         doc = change.document
@@ -67,11 +82,11 @@ def on_snapshot(col_snapshot, changes, read_time):
         data = doc.to_dict()
 
         event = None
-        if change.type.name == 'ADDED':
+        if change.type.name == "ADDED":
             event = ("ADDED", "🟢")
-        elif change.type.name == 'MODIFIED':
+        elif change.type.name == "MODIFIED":
             event = ("MODIFIED", "🟡")
-        elif change.type.name == 'REMOVED':
+        elif change.type.name == "REMOVED":
             event = ("REMOVED", "🔴")
 
         if event:
@@ -110,7 +125,7 @@ def start_watch():
             query = db.collection(collection_name)
             watch = query.on_snapshot(on_snapshot)
             print(f"👂 Listening for changes in '{collection_name}' (Ctrl+C to stop)")
-            backoff = 1  # reset backoff after a successful start
+            backoff = 1  # reset after successful start
 
             # Wait until the watch signals close; then trigger retry.
             closed_event = getattr(watch, "_closed", None)
@@ -138,7 +153,6 @@ def start_watch():
                     watch.unsubscribe()
                 except Exception:
                     pass
-        # ensure worker thread stays running
 
 
 worker = threading.Thread(target=worker_loop, daemon=True)

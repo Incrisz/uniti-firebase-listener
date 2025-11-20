@@ -3,6 +3,8 @@ from firebase_admin import credentials, firestore
 import boto3
 import json
 import time
+import queue
+import threading
 from dotenv import load_dotenv
 import os
 
@@ -67,21 +69,37 @@ def on_snapshot(col_snapshot, changes, read_time):
         doc_id = doc.id
         data = doc.to_dict()
 
+        event = None
         if change.type.name == 'ADDED':
-            print(f"🟢 New document: {doc_id}")
-            send_to_kinesis(doc_id, "ADDED", data)
-
+            event = ("ADDED", "🟢")
         elif change.type.name == 'MODIFIED':
-            print(f"🟡 Modified document: {doc_id}")
-            send_to_kinesis(doc_id, "MODIFIED", data)
-
+            event = ("MODIFIED", "🟡")
         elif change.type.name == 'REMOVED':
-            print(f"🔴 Removed document: {doc_id}")
-            send_to_kinesis(doc_id, "REMOVED", data)
+            event = ("REMOVED", "🔴")
+
+        if event:
+            change_type, icon = event
+            print(f"{icon} Queued {change_type} for document: {doc_id}")
+            work_queue.put((doc_id, change_type, data))
 
 
 # Listen to a Firestore collection in real time (override via FIRESTORE_COLLECTION in .env)
 collection_name = os.getenv("FIRESTORE_COLLECTION", "app_usage_logs")
+work_queue = queue.Queue()
+
+
+def worker_loop():
+    """
+    Processes queued Firestore changes outside the watch thread to avoid blocking it.
+    """
+    while True:
+        doc_id, change_type, data = work_queue.get()
+        try:
+            send_to_kinesis(doc_id, change_type, data)
+        except Exception as exc:
+            print(f"⚠️ Kinesis send failed for {doc_id}: {exc}")
+        finally:
+            work_queue.task_done()
 
 
 def start_watch():
@@ -95,11 +113,17 @@ def start_watch():
             query = db.collection(collection_name)
             watch = query.on_snapshot(on_snapshot)
             print(f"👂 Listening for changes in '{collection_name}' (Ctrl+C to stop)")
+            backoff = 1  # reset backoff after a successful start
 
-            # Block until the watch thread exits; if it does, restart with backoff.
-            if hasattr(watch, "_thread"):
+            # Wait until the watch signals close; then trigger retry.
+            closed_event = getattr(watch, "_closed", None)
+            if closed_event:
+                while True:
+                    if closed_event.wait(timeout=60):
+                        raise RuntimeError("Firestore watch stopped (closed event)")
+            elif hasattr(watch, "_thread"):
                 watch._thread.join()
-                raise RuntimeError("Firestore watch thread stopped")
+                raise RuntimeError("Firestore watch stopped (thread exited)")
             else:
                 while True:
                     time.sleep(60)
@@ -117,6 +141,10 @@ def start_watch():
                     watch.unsubscribe()
                 except Exception:
                     pass
+        # ensure worker thread stays running
 
+
+worker = threading.Thread(target=worker_loop, daemon=True)
+worker.start()
 
 start_watch()

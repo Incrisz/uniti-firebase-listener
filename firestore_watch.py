@@ -15,7 +15,7 @@ from firebase_admin import credentials, firestore
 load_dotenv()
 
 collection_name = os.getenv("FIRESTORE_COLLECTION", "app_usage_logs")
-service_account_file = os.getenv("SERVICE_ACCOUNT_FILE", "google-services.json")
+service_account_file = os.getenv("SERVICE_ACCOUNT_FILE", "uniti-production-firebase-adminsdk.json")
 
 if not firebase_admin._apps:
     cred = credentials.Certificate(service_account_file)

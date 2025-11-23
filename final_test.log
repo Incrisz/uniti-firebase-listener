@@ -1,0 +1,2 @@
+/home/cloud/Videos/uniti-firebase-listener/.venv/lib/python3.11/site-packages/google/cloud/firestore_v1/base_collection.py:304: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  return query.where(field_path, op_string, value)

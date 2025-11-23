@@ -19,7 +19,7 @@ from firebase_admin import credentials, firestore
 import boto3
 from botocore.exceptions import ClientError
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Firestore configuration
 collection_name = os.getenv("FIRESTORE_COLLECTION", "app_usage_logs")
@@ -30,15 +30,6 @@ timestamp_file = os.getenv("LAST_SYNC_FILE", ".last_sync_timestamp")
 kinesis_stream = os.getenv("KINESIS_STREAM", "prod-firestore-events")
 aws_region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 
-# Delete existing Firebase app if it exists
-if firebase_admin._apps:
-    firebase_admin.delete_app(firebase_admin.get_app())
-
-# Initialize Firebase
-cred = credentials.Certificate(service_account_file)
-firebase_admin.initialize_app(cred)
-db = firestore.client()
-
 # Initialize AWS Kinesis client
 kinesis_client = boto3.client(
     'kinesis',
@@ -47,31 +38,45 @@ kinesis_client = boto3.client(
     aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
 )
 
+# Global variable for Firestore client (initialized in main())
+db = None
+
 
 def get_last_sync_timestamp():
     """
-    Read the last sync timestamp from file.
-    Returns timestamp in milliseconds, or None if first run.
+    Query Firestore for the most recent document timestamp.
+    This avoids timestamp file issues when switching service accounts.
+    Returns timestamp in milliseconds, or None if collection is empty.
     """
-    if os.path.exists(timestamp_file):
-        try:
-            with open(timestamp_file, 'r') as f:
-                data = json.load(f)
-                last_ts = data.get('last_sync_timestamp')
-                last_dt = data.get('last_sync_datetime')
-                print(f"📋 Last sync: {last_dt} (timestamp: {last_ts})")
+    try:
+        print("🔍 Querying Firestore for most recent document...")
+
+        # Query for the most recent document by timestamp (limit to 1)
+        col_ref = db.collection(collection_name)
+        recent_docs = col_ref.order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1).stream()
+
+        # Get the first (most recent) document
+        for doc in recent_docs:
+            doc_data = doc.to_dict()
+            last_ts = doc_data.get('timestamp')
+            if last_ts:
+                last_dt = datetime.fromtimestamp(last_ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                print(f"📋 Most recent document: {last_dt} (timestamp: {last_ts})")
                 return last_ts
-        except Exception as e:
-            print(f"⚠️  Error reading timestamp file: {e}")
-            return None
-    else:
-        print("🆕 First run - no previous sync timestamp found")
+
+        print("🆕 No documents found in collection - will watch from last 24 hours")
+        return None
+
+    except Exception as e:
+        print(f"⚠️  Error querying most recent document: {e}")
+        print(f"   Will watch from last 24 hours instead")
         return None
 
 
 def save_sync_timestamp(timestamp):
     """
-    Save the current sync timestamp to file for next run.
+    Optional: Save timestamp to file for logging/debugging purposes only.
+    The listener no longer depends on this file - it queries Firestore directly.
     """
     try:
         data = {
@@ -79,13 +84,14 @@ def save_sync_timestamp(timestamp):
             'last_sync_datetime': datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S'),
             'collection': collection_name,
             'project': credentials.Certificate(service_account_file).project_id,
-            'kinesis_stream': kinesis_stream
+            'kinesis_stream': kinesis_stream,
+            'note': 'For logging only - listener queries Firestore directly'
         }
         with open(timestamp_file, 'w') as f:
             json.dump(data, f, indent=2)
-        print(f"✅ Saved sync timestamp: {data['last_sync_datetime']}")
     except Exception as e:
-        print(f"❌ Error saving timestamp: {e}")
+        # Ignore errors since this is optional logging
+        pass
 
 
 def send_to_kinesis(doc_id, doc_data, event_type="MODIFIED"):
@@ -153,12 +159,22 @@ def main():
     """
     Main function - sets up real-time listener and runs continuously.
     """
+    global db
+
     print("\n" + "=" * 60)
     print("🔄 FIRESTORE → KINESIS REAL-TIME SYNC")
     print("=" * 60)
 
-    info = credentials.Certificate(service_account_file)
-    print(f"📡 Firebase Project: {info.project_id}")
+    # Delete existing Firebase app if it exists
+    if firebase_admin._apps:
+        firebase_admin.delete_app(firebase_admin.get_app())
+
+    # Initialize Firebase with current service account file
+    cred = credentials.Certificate(service_account_file)
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+
+    print(f"📡 Firebase Project: {cred.project_id}")
     print(f"📂 Firestore Collection: {collection_name}")
     print(f"🌊 Kinesis Stream: {kinesis_stream}")
     print(f"🌍 AWS Region: {aws_region}")
@@ -189,11 +205,6 @@ def main():
 
             # Get document timestamp
             doc_timestamp = doc_data.get('timestamp')
-
-            # Filter: only process documents newer than last sync (on startup)
-            if last_timestamp is not None:
-                if isinstance(doc_timestamp, (int, float)) and doc_timestamp <= last_timestamp:
-                    continue  # Skip old documents
 
             if change.type.name == 'ADDED':
                 print(f"➕ NEW: {doc.id}")
@@ -231,9 +242,22 @@ def main():
         print("   Watching for ADDED, MODIFIED, and REMOVED documents")
         print("   Press Ctrl+C to stop\n")
 
-        # Set up the listener
+        # Set up the listener with a filter to only watch recent documents
+        # This prevents timeout issues on large collections
         col_ref = db.collection(collection_name)
-        col_watch = col_ref.on_snapshot(on_snapshot)
+
+        # If we have a last timestamp, only watch documents after that
+        if last_timestamp is not None:
+            query = col_ref.where('timestamp', '>', last_timestamp)
+            print(f"   Filtering: Only watching documents with timestamp > {last_timestamp}\n")
+        else:
+            # For first run, watch documents from last 24 hours to avoid overwhelming the listener
+            import time
+            one_day_ago = int((time.time() - 86400) * 1000)
+            query = col_ref.where('timestamp', '>', one_day_ago)
+            print(f"   First run: Watching documents from last 24 hours\n")
+
+        col_watch = query.on_snapshot(on_snapshot)
 
         print("✅ Listener active! Monitoring Firestore for changes...\n")
 

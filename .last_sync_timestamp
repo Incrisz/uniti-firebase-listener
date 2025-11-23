@@ -1,7 +1,8 @@
 {
-  "last_sync_timestamp": 1763706279742,
-  "last_sync_datetime": "2025-11-21 07:24:39",
+  "last_sync_timestamp": 1763709490815,
+  "last_sync_datetime": "2025-11-21 08:18:10",
   "collection": "app_usage_logs",
-  "project": "uniti-production",
-  "kinesis_stream": "prod-firestore-events"
+  "project": "easlow-e5eef",
+  "kinesis_stream": "prod-firestore-events",
+  "note": "For logging only - listener queries Firestore directly"
 }

@@ -1,0 +1,23 @@
+
+============================================================
+🔄 FIRESTORE → KINESIS REAL-TIME SYNC
+============================================================
+📡 Firebase Project: uniti-production
+📂 Firestore Collection: app_usage_logs
+🌊 Kinesis Stream: prod-firestore-events
+🌍 AWS Region: us-east-1
+============================================================
+✅ Kinesis stream 'prod-firestore-events' is ACTIVE
+
+🔍 Querying Firestore for most recent document...
+📋 Most recent document: 2025-11-21 08:01:46 (timestamp: 1763708506776)
+👂 Starting real-time listener...
+   Watching for ADDED, MODIFIED, and REMOVED documents
+   Press Ctrl+C to stop
+
+/home/cloud/Videos/uniti-firebase-listener/.venv/lib/python3.11/site-packages/google/cloud/firestore_v1/base_collection.py:304: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  return query.where(field_path, op_string, value)
+   Filtering: Only watching documents with timestamp > 1763708506776
+
+✅ Listener active! Monitoring Firestore for changes...
+

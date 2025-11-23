@@ -98,13 +98,20 @@ The script uses Firestore's **`on_snapshot`** listener:
 - **MODIFIED** - Existing document updated
 - **REMOVED** - Document deleted
 
-### Filtering on Startup
-On first run or restart, the script:
-- Reads last sync timestamp from `.last_sync_timestamp`
-- Skips processing old documents (timestamp ≤ last_sync)
-- Only processes new changes going forward
+### Query Filtering (Important!)
+To handle large collections efficiently:
+- **With last_sync_timestamp**: Only watches documents with `timestamp > last_sync`
+- **First run (no timestamp)**: Only watches documents from last 24 hours
+- This prevents timeout errors on collections with millions of documents
 
-This prevents re-sending old data when restarting the listener.
+The listener only monitors documents matching the filter, making it efficient and scalable.
+
+### Why Filtering is Necessary
+Firestore real-time listeners can timeout when watching entire large collections. By filtering to only watch recent documents, we:
+- ✅ Avoid timeout errors
+- ✅ Reduce network overhead
+- ✅ Improve performance
+- ✅ Only monitor relevant new/modified documents
 
 ---
 

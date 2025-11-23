@@ -60,6 +60,7 @@ from botocore.exceptions import BotoCoreError, ClientError, EndpointConnectionEr
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.firestore_v1 import FieldFilter
 
 try:
     cred = credentials.Certificate(SERVICE_ACCOUNT_FILE)
@@ -194,7 +195,7 @@ def start_listener() -> None:
     global watch_handle
     effective_ts = max(0, startup_ts - TIMESTAMP_SKEW_MS)
     collection_ref = db.collection(FIRESTORE_COLLECTION)
-    query = collection_ref.where("timestamp", ">", effective_ts)
+    query = collection_ref.where(filter=FieldFilter("timestamp", ">", effective_ts))
     logger.info(
         "Attaching listener to collection=%s with timestamp filter > %d (startup_ts=%d, skew_ms=%d)",
         FIRESTORE_COLLECTION,
@@ -202,25 +203,8 @@ def start_listener() -> None:
         startup_ts,
         TIMESTAMP_SKEW_MS,
     )
-    watch_handle = query.on_snapshot(on_collection_snapshot, on_error=on_watch_error)
+    watch_handle = query.on_snapshot(on_collection_snapshot)
     logger.info("Listener attached successfully")
-
-
-def on_watch_error(error: Exception):
-    """Handle Firestore watch errors by logging and reattaching."""
-    logger.error("Firestore watch error: %s", error, exc_info=True)
-    if shutdown_event.is_set():
-        return
-    backoff = BASE_BACKOFF
-    while not shutdown_event.is_set():
-        try:
-            start_listener()
-            logger.info("Reattached Firestore listener after error")
-            return
-        except Exception as exc:
-            logger.error("Failed to reattach listener: %s", exc, exc_info=True)
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 60)
 
 
 def _stop(signum=None, frame=None):

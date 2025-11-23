@@ -1,32 +1,40 @@
-# Firestore → Kinesis Listener
+# Firestore -> Kinesis Listener
 
-Python script that watches a Firestore collection in real time and forwards each document change into an AWS Kinesis stream.
+Files:
+- `listener.py`
 
-## How it works
-- Loads AWS credentials and stream name from `.env`.
-- Initializes Firebase Admin using the service account file specified in `SERVICE_ACCOUNT_FILE` (default `serviceAccount.json`).
-- Subscribes to the Firestore collection in `FIRESTORE_COLLECTION` (default `app_usage_logs`).
-- On every add/modify/delete, packages the document data and sends it to the configured Kinesis stream.
+Dependencies
+1. Python 3.9+
+2. Install dependencies:
+   pip install -r requirements.txt
+   or
+   pip install python-dotenv firebase-admin boto3
 
-## Setup
-1) Ensure Python 3.10+ is installed.
-2) Place your Firebase service account JSON in the project root (or set `SERVICE_ACCOUNT_FILE` in `.env`).
-3) Copy `.env.example` to `.env` and fill in AWS creds, `AWS_DEFAULT_REGION`, `KINESIS_STREAM`, and `FIRESTORE_COLLECTION`.
-4) Install dependencies: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`.
-5) Run the listener: `python listener.py`.
+Environment (.env)
+Set the following variables in a `.env` file or your environment:
 
-## Docker
-- Build: `docker build -t firestore-kinesis-listener .`
-- Run (mount creds and load env):  
-  `docker run --env-file .env -v $(pwd)/serviceAccount.json:/app/serviceAccount.json:ro firestore-kinesis-listener`
-- Override the Firestore collection: add `-e FIRESTORE_COLLECTION=your_collection`.
-- Stop: `docker ps` to find the container ID/name, then `docker stop <id>`.
+SERVICE_ACCOUNT_FILE=/full/path/to/serviceAccount.json
+FIRESTORE_COLLECTION=your-collection-name
+KINESIS_STREAM=your-kinesis-stream-name
 
-## Notes
-- The listener runs indefinitely; stop with `Ctrl+C` (or stop the container).
-- Use IAM credentials that can write to the target Kinesis stream.
+AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
+AWS_REGION=us-east-1
 
+Optional:
+MAX_WORKERS=8
 
- docker build -t firestore-kinesis-listener .
+Run locally
+1. Ensure Firestore service account JSON is available and `SERVICE_ACCOUNT_FILE` points to it.
+2. Ensure AWS credentials and Kinesis stream exist.
+3. Start listener:
+   python listener.py
 
- docker run -d --restart unless-stopped --name firestore-listener --env-file .env -v "$(pwd)/uniti-production-firebase-adminsdk.json:/app/serviceAccount.json:ro" firestore-kinesis-listener# uniti-firebase-listener
+Test Firestore → Kinesis events
+1. With the listener running, add a new document to the specified Firestore collection (do NOT edit existing documents):
+   - Use Firebase console to add a new document
+   - Or use Firestore SDK / gcloud to create a document in the collection
+2. The listener will only process documents added after it was started. Each new document will be serialized to JSON (UTF-8) with `_id` set to the document ID and sent to the Kinesis stream with `PartitionKey` = document ID.
+3. Check Kinesis (e.g., using consumer or CloudWatch) to verify the record arrival.
+
+Graceful shutdown: Ctrl+C (SIGINT)

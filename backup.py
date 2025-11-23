@@ -31,7 +31,6 @@ AWS_REGION = os.getenv("AWS_DEFAULT_REGION") or os.getenv("AWS_REGION") or "us-e
 MAX_WORKERS = 10
 MAX_RETRIES = 6
 BASE_BACKOFF = 0.5
-TIMESTAMP_SKEW_MS = int(os.getenv("TIMESTAMP_SKEW_MS", "0"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -192,16 +191,9 @@ def on_collection_snapshot(col_snapshot, changes, read_time):
 
 def start_listener() -> None:
     global watch_handle
-    effective_ts = max(0, startup_ts - TIMESTAMP_SKEW_MS)
     collection_ref = db.collection(FIRESTORE_COLLECTION)
-    query = collection_ref.where("timestamp", ">", effective_ts)
-    logger.info(
-        "Attaching listener to collection=%s with timestamp filter > %d (startup_ts=%d, skew_ms=%d)",
-        FIRESTORE_COLLECTION,
-        effective_ts,
-        startup_ts,
-        TIMESTAMP_SKEW_MS,
-    )
+    query = collection_ref.where("timestamp", ">", startup_ts)
+    logger.info("Attaching listener to collection=%s with timestamp filter > %d", FIRESTORE_COLLECTION, startup_ts)
     watch_handle = query.on_snapshot(on_collection_snapshot, on_error=on_watch_error)
     logger.info("Listener attached successfully")
 

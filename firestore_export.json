@@ -1,0 +1,20 @@
+[
+  {
+    "totalTimeInForegroundMs": 57934,
+    "date": "2025-09-16",
+    "username": "",
+    "packageName": "com.google.android.apps.messaging",
+    "sessionId": "39eaa4f2-1a9b-497a-a292-dfc63d0ff1e4",
+    "isScheduled": true,
+    "deviceModel": "samsung SM-A165F",
+    "timestamp": 1763945085000,
+    "totalTimeInForegroundMinutes": 0,
+    "phoneNumber": "",
+    "userId": "x0GYNjo65xTUCz8ckxlqA3xIEKG2",
+    "lastTimeUsed": 1758002918325,
+    "androidVersion": "15",
+    "rank": 3,
+    "lastTimeUsedFormatted": "2025-09-16 06:08:38",
+    "id": "000d0QDCRldXFjXWfNIs"
+  }
+]

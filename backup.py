@@ -194,7 +194,8 @@ def start_listener() -> None:
     collection_ref = db.collection(FIRESTORE_COLLECTION)
     query = collection_ref.where("timestamp", ">", startup_ts)
     logger.info("Attaching listener to collection=%s with timestamp filter > %d", FIRESTORE_COLLECTION, startup_ts)
-    watch_handle = query.on_snapshot(on_collection_snapshot, on_error=on_watch_error)
+    # google-cloud-firestore < 2.12 does not support on_error kwarg on on_snapshot
+    watch_handle = query.on_snapshot(on_collection_snapshot)
     logger.info("Listener attached successfully")
 
 

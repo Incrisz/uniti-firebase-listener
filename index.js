@@ -15,6 +15,13 @@ exports.handler = async (event) => {
       // Log raw Kinesis payload
       console.log(JSON.stringify(payload));
 
+      // Only handle added/modified mutations; ignore anything else defensively.
+      const mutation = (payload.event || "").toLowerCase();
+      if (mutation && !["added", "modified"].includes(mutation)) {
+        console.log(`Skipping mutation type: ${payload.event}`);
+        continue;
+      }
+
       // ======== 🔥 START SECTION — MINIMAL + SAFE ========
 
       // Extract userId from payload.data

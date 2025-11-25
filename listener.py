@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import threading
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 import boto3
@@ -44,6 +45,14 @@ def _to_json_ready(value: Any) -> Any:
     return value
 
 
+def _extract_parent_id(path: str, parent_collection: str) -> str | None:
+    parts = path.split("/")
+    for i, part in enumerate(parts):
+        if part == parent_collection and i + 1 < len(parts):
+            return parts[i + 1]
+    return None
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -59,6 +68,8 @@ def main() -> None:
 
     logging.info("Initializing Kinesis client for stream %s", config["kinesis_stream"])
     kinesis = boto3.client("kinesis", region_name=config["aws_region"])
+
+    start_cutoff = datetime.now(timezone.utc)
 
     if config["query_scope"] == "group":
         collection = db.collection_group(config["firestore_collection"])
@@ -80,11 +91,32 @@ def main() -> None:
 
             doc = change.document
             if config.get("parent_collection"):
-                marker = f"/{config['parent_collection']}/"
-                if marker not in doc.reference.path:
+                marker = f"{config['parent_collection']}/"
+                if not doc.reference.path.startswith(marker):
                     if config["debug_listener"]:
-                        logging.info("Skipping %s due to parent filter %s", doc.reference.path, marker)
+                        logging.info(
+                            "Skipping %s due to parent filter (expected prefix %s)",
+                            doc.reference.path,
+                            marker,
+                        )
                     continue
+
+            doc_data = doc.to_dict() or {}
+            user_id = doc_data.get("userId")
+            if not user_id and config.get("parent_collection"):
+                user_id = _extract_parent_id(doc.reference.path, config["parent_collection"])
+
+            # Skip historical docs present at startup; only forward new/updated after listener began.
+            latest_write = doc.update_time or doc.create_time
+            if latest_write and latest_write < start_cutoff:
+                if config["debug_listener"]:
+                    logging.info(
+                        "Skipping %s written at %s before listener start %s",
+                        doc.reference.path,
+                        latest_write.isoformat(),
+                        start_cutoff.isoformat(),
+                    )
+                continue
 
             data = {
                 "event": change.type.name.lower(),
@@ -93,7 +125,8 @@ def main() -> None:
                 "parent_collection": config["parent_collection"] or None,
                 "document_id": doc.id,
                 "document_path": doc.reference.path,
-                "data": _to_json_ready(doc.to_dict()),
+                "user_id": user_id,
+                "data": _to_json_ready(doc_data),
                 "read_time": read_time.isoformat() if read_time else None,
                 "create_time": doc.create_time.isoformat() if doc.create_time else None,
                 "update_time": doc.update_time.isoformat() if doc.update_time else None,

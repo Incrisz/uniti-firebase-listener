@@ -10,5 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Expect credentials and env at runtime (mount serviceAccount.json and provide env vars)
+# Decode service account from FIREBASE_SA_B64 (if set) before starting.
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["python", "listener.py"]

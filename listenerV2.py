@@ -168,7 +168,6 @@ def main() -> None:
                 "update_time": doc.update_time.isoformat() if doc.update_time else None,
             }
 
-            _publish_firebase_received_metric(cloudwatch)
             try:
                 payload = json.dumps(data, default=str)
                 kinesis.put_record(
@@ -176,6 +175,7 @@ def main() -> None:
                     Data=payload,
                     PartitionKey=doc.id,
                 )
+                _publish_firebase_received_metric(cloudwatch)
                 _publish_kinesis_pushed_metric(cloudwatch)
                 logging.info(
                     "Sent %s change for %s to Kinesis (scope=%s, parent=%s)",
@@ -184,7 +184,6 @@ def main() -> None:
                     config["query_scope"],
                     config["parent_collection"] or "none",
                 )
-                _publish_firebase_received_metric(cloudwatch)
             except (ClientError, BotoCoreError):
                 logging.exception("Failed to push change for %s to Kinesis", doc.reference.path)
 

@@ -87,6 +87,23 @@ def _publish_kinesis_pushed_metric(cloudwatch_client: Any) -> None:
         logging.exception("Failed to publish KinesisPushed metric")
 
 
+def _publish_user_added_metric(cloudwatch_client: Any) -> None:
+    try:
+        cloudwatch_client.put_metric_data(
+            Namespace="PipelineMetrics",
+            MetricData=[
+                {
+                    "MetricName": "UsersAdded",
+                    "Dimensions": [{"Name": "Stage", "Value": "Listener"}],
+                    "Value": 1,
+                    "Unit": "Count",
+                }
+            ],
+        )
+    except (ClientError, BotoCoreError):
+        logging.exception("Failed to publish UsersAdded metric")
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -177,6 +194,8 @@ def main() -> None:
                 )
                 _publish_firebase_received_metric(cloudwatch)
                 _publish_kinesis_pushed_metric(cloudwatch)
+                if change.type.name == "ADDED":
+                    _publish_user_added_metric(cloudwatch)
                 logging.info(
                     "Sent %s change for %s to Kinesis (scope=%s, parent=%s)",
                     change.type.name,

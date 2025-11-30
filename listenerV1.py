@@ -53,40 +53,6 @@ def _extract_parent_id(path: str, parent_collection: str) -> str | None:
     return None
 
 
-def _publish_firebase_received_metric(cloudwatch_client: Any) -> None:
-    try:
-        cloudwatch_client.put_metric_data(
-            Namespace="PipelineMetrics",
-            MetricData=[
-                {
-                    "MetricName": "FirebaseReceived",
-                    "Dimensions": [{"Name": "Stage", "Value": "Listener"}],
-                    "Value": 1,
-                    "Unit": "Count",
-                }
-            ],
-        )
-    except (ClientError, BotoCoreError):
-        logging.exception("Failed to publish FirebaseReceived metric")
-
-
-def _publish_kinesis_pushed_metric(cloudwatch_client: Any) -> None:
-    try:
-        cloudwatch_client.put_metric_data(
-            Namespace="PipelineMetrics",
-            MetricData=[
-                {
-                    "MetricName": "KinesisPushed",
-                    "Dimensions": [{"Name": "Stage", "Value": "Kinesis"}],
-                    "Value": 1,
-                    "Unit": "Count",
-                }
-            ],
-        )
-    except (ClientError, BotoCoreError):
-        logging.exception("Failed to publish KinesisPushed metric")
-
-
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -99,8 +65,6 @@ def main() -> None:
     cred = credentials.Certificate(config["service_account_file"])
     firebase_admin.initialize_app(cred)
     db = firestore.client()
-
-    cloudwatch = boto3.client("cloudwatch", region_name="us-east-1")
 
     logging.info("Initializing Kinesis client for stream %s", config["kinesis_stream"])
     kinesis = boto3.client("kinesis", region_name=config["aws_region"])
@@ -168,7 +132,6 @@ def main() -> None:
                 "update_time": doc.update_time.isoformat() if doc.update_time else None,
             }
 
-            _publish_firebase_received_metric(cloudwatch)
             try:
                 payload = json.dumps(data, default=str)
                 kinesis.put_record(
@@ -176,7 +139,6 @@ def main() -> None:
                     Data=payload,
                     PartitionKey=doc.id,
                 )
-                _publish_kinesis_pushed_metric(cloudwatch)
                 logging.info(
                     "Sent %s change for %s to Kinesis (scope=%s, parent=%s)",
                     change.type.name,
@@ -184,7 +146,6 @@ def main() -> None:
                     config["query_scope"],
                     config["parent_collection"] or "none",
                 )
-                _publish_firebase_received_metric(cloudwatch)
             except (ClientError, BotoCoreError):
                 logging.exception("Failed to push change for %s to Kinesis", doc.reference.path)
 

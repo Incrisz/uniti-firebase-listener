@@ -197,11 +197,15 @@ def main() -> None:
                 )
                 _publish_firebase_received_metric(cloudwatch)
                 _publish_kinesis_pushed_metric(cloudwatch)
-                if change.type.name == "ADDED" and user_id:
+                if user_id:
+                    # Count a user the first time we see any change for them after startup,
+                    # regardless of whether the snapshot reports ADDED or MODIFIED.
                     with seen_lock:
-                        if user_id not in seen_user_ids:
+                        first_seen = user_id not in seen_user_ids
+                        if first_seen:
                             seen_user_ids.add(user_id)
-                            _publish_user_added_metric(cloudwatch)
+                    if first_seen:
+                        _publish_user_added_metric(cloudwatch)
                 logging.info(
                     "Sent %s change for %s to Kinesis (scope=%s, parent=%s)",
                     change.type.name,

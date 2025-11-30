@@ -131,6 +131,9 @@ def main() -> None:
         collection = db.collection(config["firestore_collection"])
         scope_desc = "collection"
 
+    seen_user_ids: set[str] = set()
+    seen_lock = threading.Lock()
+
     def on_snapshot(query_snapshot, changes, read_time) -> None:
         if config["debug_listener"]:
             logging.info(
@@ -194,8 +197,11 @@ def main() -> None:
                 )
                 _publish_firebase_received_metric(cloudwatch)
                 _publish_kinesis_pushed_metric(cloudwatch)
-                if change.type.name == "ADDED":
-                    _publish_user_added_metric(cloudwatch)
+                if change.type.name == "ADDED" and user_id:
+                    with seen_lock:
+                        if user_id not in seen_user_ids:
+                            seen_user_ids.add(user_id)
+                            _publish_user_added_metric(cloudwatch)
                 logging.info(
                     "Sent %s change for %s to Kinesis (scope=%s, parent=%s)",
                     change.type.name,

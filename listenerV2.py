@@ -56,7 +56,7 @@ def _extract_parent_id(path: str, parent_collection: str) -> str | None:
 def _publish_firebase_received_metric(cloudwatch_client: Any) -> None:
     try:
         cloudwatch_client.put_metric_data(
-            Namespace="PipelineMetrics",
+            Namespace="Prod-PipelineMetrics",
             MetricData=[
                 {
                     "MetricName": "FirebaseReceived",
@@ -73,7 +73,7 @@ def _publish_firebase_received_metric(cloudwatch_client: Any) -> None:
 def _publish_kinesis_pushed_metric(cloudwatch_client: Any) -> None:
     try:
         cloudwatch_client.put_metric_data(
-            Namespace="PipelineMetrics",
+            Namespace="Prod-PipelineMetrics",
             MetricData=[
                 {
                     "MetricName": "KinesisPushed",
